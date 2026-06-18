@@ -6,6 +6,9 @@ resources:
   cpus: 2
   memory: 12GB
   disk: 8GB
+env:
+  KFLOW_RUNTIME_UPDATE: auto
+  KFLOW_RUNTIME_PACKAGES: mfclshiny=PacificCommunity/mfclshiny@main
 output_patterns:
   - outputs/**
 job_config:
@@ -17,5 +20,5 @@ job_config:
     - FLOW_SPECIES
     - FLOW_SPECIES_LABEL
     - FLOW_ASSESSMENT_YEAR
+    - KFLOW_RUNTIME_UPDATE
     - KFLOW_RUNTIME_PACKAGES
-
