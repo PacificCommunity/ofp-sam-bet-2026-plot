@@ -379,20 +379,50 @@ build_regional_series <- function(payload_list, slot_name, y_label, scale = 1) {
 
 write_plot_review_html <- function(figure_index, table_index, out_dir, title, species_label, assessment_year) {
   html_file <- file.path(out_dir, "plot-report.html")
-  cards <- character()
+  figure_index <- as.data.frame(figure_index %||% data.frame(), stringsAsFactors = FALSE)
+  table_index <- as.data.frame(table_index %||% data.frame(), stringsAsFactors = FALSE)
+  tabs <- if (nrow(figure_index) && "description" %in% names(figure_index)) {
+    as.character(figure_index$description)
+  } else {
+    rep("Figures", nrow(figure_index))
+  }
+  tabs[!nzchar(tabs) | is.na(tabs)] <- "Figures"
+  figure_index$.tab <- tabs
+
+  by_tab_cards <- character()
   if (nrow(figure_index)) {
-    for (i in seq_len(nrow(figure_index))) {
-      label <- row_value(figure_index, "label", i, row_value(figure_index, "figure", i, paste("Figure", i)))
-      rel_path <- row_value(figure_index, "relative_path", i, row_value(figure_index, "file", i, ""))
-      caption <- row_value(figure_index, "caption", i, "")
-      cards <- c(cards, sprintf(
-        '<section class="figure-card"><h2>%s</h2><img src="%s" alt="%s"><p>%s</p></section>',
-        html_escape(label), html_escape(rel_path), html_escape(caption), html_escape(caption)
+    for (tab in unique(figure_index$.tab)) {
+      idx <- which(figure_index$.tab == tab)
+      cards <- character()
+      for (i in idx) {
+        label <- row_value(figure_index, "label", i, row_value(figure_index, "figure", i, paste("Figure", i)))
+        rel_path <- row_value(figure_index, "relative_path", i, row_value(figure_index, "file", i, ""))
+        caption <- row_value(figure_index, "caption", i, "")
+        figure_id <- row_value(figure_index, "figure", i, "")
+        format <- row_value(figure_index, "format", i, tools::file_ext(rel_path))
+        cards <- c(cards, sprintf(
+          paste0(
+            '<article class="figure-card">',
+            '<div class="card-head"><span>%s</span><code>%s</code></div>',
+            '<h3>%s</h3>',
+            '<a href="%s"><img src="%s" alt="%s"></a>',
+            '<p>%s</p>',
+            '<div class="file-row"><a href="%s">Open %s</a></div>',
+            '</article>'
+          ),
+          html_escape(tab), html_escape(figure_id), html_escape(label),
+          html_escape(rel_path), html_escape(rel_path), html_escape(caption),
+          html_escape(caption), html_escape(rel_path), html_escape(toupper(format))
+        ))
+      }
+      by_tab_cards <- c(by_tab_cards, sprintf(
+        '<section class="tab-section"><div class="section-title"><h2>%s</h2><span>%d figures</span></div><div class="grid">%s</div></section>',
+        html_escape(tab), length(idx), paste(cards, collapse = "\n")
       ))
     }
   }
   table_cards <- character()
-  if (is.data.frame(table_index) && nrow(table_index)) {
+  if (nrow(table_index)) {
     for (i in seq_len(nrow(table_index))) {
       label <- row_value(table_index, "label", i, row_value(table_index, "table", i, paste("Table", i)))
       rel_path <- row_value(table_index, "relative_path", i, row_value(table_index, "file", i, ""))
@@ -411,16 +441,26 @@ write_plot_review_html <- function(figure_index, table_index, out_dir, title, sp
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     sprintf("<title>%s</title>", html_escape(title)),
     "<style>",
-    "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;background:#f5f8fa;color:#16293a}",
-    "main{max-width:1180px;margin:0 auto;padding:32px 24px 56px}",
-    "header{margin-bottom:28px}",
+    "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;background:#f4f8fa;color:#16293a}",
+    "main{max-width:1240px;margin:0 auto;padding:32px 24px 56px}",
+    "header{margin-bottom:26px;border-bottom:1px solid #d8e6ee;padding-bottom:18px}",
     "h1{font-size:32px;line-height:1.15;margin:0 0 8px}",
     ".meta{color:#5c7184;font-weight:600}",
+    ".summary{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}",
+    ".summary span{background:#fff;border:1px solid #d9e5ec;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:800;color:#31566f}",
+    ".tab-section{margin-top:28px}",
+    ".section-title{display:flex;align-items:baseline;justify-content:space-between;gap:14px;margin-bottom:12px}",
+    ".section-title h2{font-size:20px;margin:0}",
+    ".section-title span{color:#617589;font-weight:700;font-size:13px}",
     ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:22px}",
-    ".figure-card{background:#fff;border:1px solid #d9e5ec;border-radius:8px;padding:18px;box-shadow:0 10px 28px rgba(18,41,58,.06)}",
-    ".figure-card h2{font-size:17px;margin:0 0 12px}",
+    ".figure-card{background:#fff;border:1px solid #d9e5ec;border-radius:8px;padding:16px;box-shadow:0 10px 28px rgba(18,41,58,.055)}",
+    ".card-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;color:#5c7184;font-size:12px;font-weight:800;text-transform:uppercase}",
+    ".card-head code{background:#eef5f8;border:1px solid #d7e5ed;border-radius:999px;color:#31566f;font-size:11px;padding:2px 7px;text-transform:none}",
+    ".figure-card h3{font-size:17px;margin:0 0 12px}",
     ".figure-card img{display:block;width:100%;height:auto;border:1px solid #e5edf2}",
     ".figure-card p{font-size:13px;line-height:1.45;color:#445d72;margin:12px 0 0}",
+    ".file-row{margin-top:12px}",
+    ".file-row a{border:1px solid #cddfe9;border-radius:999px;color:#1f678f;display:inline-block;font-size:12px;font-weight:800;padding:4px 9px;text-decoration:none}",
     ".tables{margin-top:28px;background:#fff;border:1px solid #d9e5ec;border-radius:8px;padding:18px}",
     ".tables h2{font-size:17px;margin:0 0 12px}",
     ".tables ul{list-style:none;padding:0;margin:0;display:grid;gap:10px}",
@@ -430,10 +470,16 @@ write_plot_review_html <- function(figure_index, table_index, out_dir, title, sp
     "</style>",
     "</head>",
     "<body><main>",
-    sprintf("<header><h1>%s</h1><div class=\"meta\">%s assessment %s</div></header>", html_escape(title), html_escape(species_label), html_escape(assessment_year)),
-    '<div class="grid">',
-    cards,
-    "</div>"
+    sprintf(
+      paste0(
+        "<header><h1>%s</h1><div class=\"meta\">%s assessment %s</div>",
+        "<div class=\"summary\"><span>%d figures</span><span>%d tables</span><span>%d source tabs</span></div></header>"
+      ),
+      html_escape(title), html_escape(species_label), html_escape(assessment_year),
+      length(unique(figure_index$figure)), if (nrow(table_index)) length(unique(table_index$table)) else 0L,
+      length(unique(figure_index$.tab))
+    ),
+    by_tab_cards
   )
   if (length(table_cards)) {
     lines <- c(lines, '<section class="tables"><h2>Tables</h2><ul>', table_cards, "</ul></section>")
@@ -465,7 +511,40 @@ payload_index <- data.frame(
 
 payload_folders <- vapply(payload_list, `[[`, character(1), "folder")
 base_result <- NULL
+used_app_report <- FALSE
 if (requireNamespace("mfclshiny", quietly = TRUE) &&
+    "build_app_report_figures" %in% getNamespaceExports("mfclshiny")) {
+  base_args <- list(
+    model_dir = input_dir,
+    folders = payload_folders,
+    output_dir = work_dir,
+    title = title,
+    formats = "png",
+    build_payloads = FALSE,
+    overwrite = TRUE,
+    render_html = TRUE,
+    qmd_file = "mfclshiny-app-report-figures.qmd",
+    html_file = "mfclshiny-app-report-figures.html",
+    figure_dir = "figures",
+    table_dir = "tables",
+    copy_legacy_root = FALSE,
+    species_code = species_code,
+    species_label = species_label,
+    assessment_year = assessment_year,
+    max_fisheries = as.integer(env("PLOT_MAX_FISHERIES", "18"))
+  )
+  base_result <- tryCatch(
+    call_with_supported_args(mfclshiny::build_app_report_figures, base_args),
+    error = function(e) {
+      message("mfclshiny::build_app_report_figures did not produce figures: ", conditionMessage(e))
+      NULL
+    }
+  )
+  used_app_report <- !is.null(base_result) && is.data.frame(base_result$figures) && nrow(base_result$figures) > 0L
+}
+
+if ((is.null(base_result) || !is.data.frame(base_result$figures) || !nrow(base_result$figures)) &&
+    requireNamespace("mfclshiny", quietly = TRUE) &&
     "build_report_figures" %in% getNamespaceExports("mfclshiny")) {
   base_args <- list(
     model_dir = input_dir,
@@ -476,7 +555,13 @@ if (requireNamespace("mfclshiny", quietly = TRUE) &&
     formats = "png",
     build_payloads = FALSE,
     overwrite = TRUE,
-    render_html = FALSE,
+    render_html = TRUE,
+    qmd_file = "mfclshiny-report-figures.qmd",
+    html_file = "mfclshiny-report-figures.html",
+    figure_dir = "figures",
+    table_dir = "tables",
+    copy_legacy_root = FALSE,
+    plot_style = "shiny_stock",
     species_code = species_code,
     species_label = species_label,
     assessment_year = assessment_year
@@ -492,6 +577,7 @@ if (requireNamespace("mfclshiny", quietly = TRUE) &&
 
 figure_index <- if (!is.null(base_result) && is.data.frame(base_result$figures)) base_result$figures else data.frame()
 table_index <- if (!is.null(base_result) && is.data.frame(base_result$tables)) base_result$tables else data.frame()
+existing_figures <- unique(as.character(figure_index$figure %||% character()))
 
 key_df <- key_series(payload_list)
 extra_specs <- list(
@@ -506,15 +592,21 @@ extra_specs <- list(
 )
 
 extra_rows <- list()
-for (spec in extra_specs) {
-  if (is.null(spec$plot)) next
-  extra_rows[[length(extra_rows) + 1L]] <- save_plot(
-    spec$plot,
-    output_dir = work_dir,
-    id = spec$id,
-    label = spec$label,
-    caption = spec$caption
-  )
+include_derived_fallback <- !isTRUE(used_app_report) ||
+  tolower(env("PLOT_INCLUDE_DERIVED_FALLBACK", "false")) %in% c("true", "1", "yes", "y", "on")
+if (isTRUE(include_derived_fallback)) {
+  for (spec in extra_specs) {
+    spec_figure <- gsub("-", "_", slug(spec$id))
+    if (spec_figure %in% existing_figures) next
+    if (is.null(spec$plot)) next
+    extra_rows[[length(extra_rows) + 1L]] <- save_plot(
+      spec$plot,
+      output_dir = work_dir,
+      id = spec$id,
+      label = spec$label,
+      caption = spec$caption
+    )
+  }
 }
 if (length(extra_rows)) {
   figure_index <- bind_rows_fill(list(figure_index, bind_rows_fill(extra_rows)))
@@ -540,6 +632,11 @@ if (dir.exists(file.path(work_dir, "figures"))) {
 }
 if (dir.exists(file.path(work_dir, "tables"))) {
   invisible(file.copy(list.files(file.path(work_dir, "tables"), full.names = TRUE), file.path(out_dir, "tables"), overwrite = TRUE))
+}
+root_files <- list.files(work_dir, full.names = TRUE, recursive = FALSE)
+root_files <- root_files[file.info(root_files)$isdir %in% FALSE]
+if (length(root_files)) {
+  invisible(file.copy(root_files, out_dir, overwrite = TRUE))
 }
 
 write.csv(figure_index, file.path(out_dir, "figure-index.csv"), row.names = FALSE)
