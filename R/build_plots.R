@@ -15,10 +15,15 @@ safe_df <- function(x) {
   tryCatch(as.data.frame(x), error = function(e) data.frame())
 }
 
+first_text <- function(x, default = "") {
+  value <- tryCatch(as.character(x), error = function(e) character())
+  if (!length(value) || is.na(value[[1]]) || !nzchar(value[[1]])) default else value[[1]]
+}
+
 payload_label <- function(payload, fallback) {
   reg <- tryCatch(payload$data$info$registry, error = function(e) NULL)
   for (name in c("plot_label", "model_label", "model_token", "job_key")) {
-    value <- tryCatch(as.character(reg[[name]][[1]]), error = function(e) "")
+    value <- first_text(tryCatch(reg[[name]], error = function(e) NULL))
     if (nzchar(value)) return(value)
   }
   fallback
@@ -76,8 +81,8 @@ call_with_supported_args <- function(fun, args) {
 
 row_value <- function(df, name, i, default = "") {
   if (!name %in% names(df)) return(default)
-  value <- df[[name]][[i]]
-  if (is.null(value) || length(value) == 0 || is.na(value)) default else value
+  value <- first_text(tryCatch(df[[name]][[i]], error = function(e) NULL), default = default)
+  if (!nzchar(value)) default else value
 }
 
 theme_report <- function(base_size = 11) {
