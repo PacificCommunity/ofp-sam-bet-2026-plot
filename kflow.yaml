@@ -14,6 +14,24 @@ env:
   KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME: "true"
 output_patterns:
   - outputs/**
+triggers:
+  on_success:
+    - key: report-from-plot
+      report: ofp-sam-bet-2026-report
+      input_jobs:
+        - "{{ job.id }}"
+      env:
+        FLOW_GROUP: "{{ job.config.FLOW_GROUP }}"
+        JOB_TITLE: BET report from plots
+        RUN_LABEL: "report-from-{{ job.id }}"
+        KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
+        KFLOW_RUNTIME_UPDATE: auto
+        KFLOW_RUNTIME_PACKAGES: mfclshiny=PacificCommunity/mfclshiny@5777092
+        KFLOW_RUNTIME_GITHUB_AUTH: "true"
+        KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME: "true"
+      tags:
+        auto: "true"
+        stage: report
 job_config:
   optional:
     - RUN_LABEL
