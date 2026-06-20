@@ -1,5 +1,5 @@
 name: ofp-sam-bet-2026-outputs
-description: Build report-ready BET 2026 figure and table outputs from stepwise model payloads.
+description: Build report-ready BET 2026 figure and table outputs from upstream model-output payloads.
 command: bash run.sh
 docker_image: ghcr.io/pacificcommunity/tuna-flow:v1.6
 resources:
