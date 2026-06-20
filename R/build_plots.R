@@ -199,6 +199,35 @@ appendix_figure <- function(rows) {
   grepl("length|weight|frequency|residual|fit by fishery|fishery[. -]*[0-9]|selectivity", text, perl = TRUE)
 }
 
+excluded_report_figure <- function(rows) {
+  text <- paste(
+    unique(tolower(c(
+      as.character(rows$figure %||% ""),
+      as.character(rows$label %||% ""),
+      as.character(rows$description %||% ""),
+      as.character(rows$caption %||% "")
+    ))),
+    collapse = " "
+  )
+  ids <- unique(report_slug(as.character(rows$figure %||% ""), "figure"))
+  any(ids %in% c(
+    "tag-recapture-pressure",
+    "tag-recapture-pressure-by-fishery",
+    "tag-recapture-pressure-release-group",
+    "tag-recapture-pressure-release-group-by-fishery"
+  )) || grepl("observed[- ]to[- ]expected recapture pressure|recapture pressure by release group", text, perl = TRUE)
+}
+
+report_figure_ids <- function(figure_index) {
+  figure_ids <- unique(as.character(figure_index$figure %||% ""))
+  figure_ids <- figure_ids[nzchar(figure_ids) & !is.na(figure_ids)]
+  keep <- vapply(figure_ids, function(id) {
+    rows <- figure_index[as.character(figure_index$figure) == id, , drop = FALSE]
+    !excluded_report_figure(rows)
+  }, logical(1))
+  figure_ids[keep]
+}
+
 preferred_figure_row <- function(rows, output_dir) {
   rows <- rows[nzchar(as.character(rows$relative_path %||% "")), , drop = FALSE]
   if (!nrow(rows)) return(data.frame(stringsAsFactors = FALSE))
@@ -225,8 +254,7 @@ report_path <- function(relative_path, prefix = env("REPORT_READY_PATH_PREFIX", 
 
 write_report_ready_figures_qmd <- function(figure_index, output_dir, ready_dir) {
   figure_index <- ensure_index_columns(figure_index, "figure")
-  figure_ids <- unique(as.character(figure_index$figure %||% ""))
-  figure_ids <- figure_ids[nzchar(figure_ids) & !is.na(figure_ids)]
+  figure_ids <- report_figure_ids(figure_index)
   groups <- list(main = character(), appendix = character())
   for (id in figure_ids) {
     rows <- figure_index[as.character(figure_index$figure) == id, , drop = FALSE]
@@ -328,8 +356,7 @@ write_report_ready_tables_qmd <- function(table_index, ready_dir) {
 write_report_ready_map <- function(figure_index, table_index, output_dir, ready_dir) {
   figure_index <- ensure_index_columns(figure_index, "figure")
   table_index <- ensure_index_columns(table_index, "table")
-  figure_ids <- unique(as.character(figure_index$figure %||% ""))
-  figure_ids <- figure_ids[nzchar(figure_ids) & !is.na(figure_ids)]
+  figure_ids <- report_figure_ids(figure_index)
   table_ids <- unique(as.character(table_index$table %||% ""))
   table_ids <- table_ids[nzchar(table_ids) & !is.na(table_ids)]
   figure_cards <- character()
