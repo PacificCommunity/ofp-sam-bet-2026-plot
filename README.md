@@ -1,6 +1,8 @@
 # BET 2026 Results
 
-[![Kflow ready task](kflow-ready.svg)](kflow.yaml)
+<p align="right">
+  <a href="kflow.yaml"><img src="kflow-ready.svg" alt="Kflow ready task"></a>
+</p>
 
 Kflow task repository for BET 2026 report-ready figures, tables, and report
 section seeds.
