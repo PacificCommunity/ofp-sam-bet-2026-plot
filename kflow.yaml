@@ -7,13 +7,6 @@ resources:
   memory: 12GB
   disk: 8GB
 
-exclude_machines:
-  - nouofpcand05
-  - nouofpcand14
-  - nouofpcand16
-  - nouofpcand17
-  - nouofpcand19
-
 env:
   JOB_TITLE: BET results
   JOB_DESCRIPTION: Build report-ready figures and tables from upstream model payloads.
