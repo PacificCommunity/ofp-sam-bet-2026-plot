@@ -24,6 +24,9 @@ results run can read that small selection file with `PLOT_REPORT_SELECTION` or
 `MFCLSHINY_REPORT_SELECTION_FILE` and rebuild the report-ready outputs from the
 same Shiny state.
 
+The app runs in local Docker on your computer. Kflow reads the needed model
+payloads from the submitter over SSH instead of starting Shiny on the submitter.
+
 ## Main Outputs
 
 ```text

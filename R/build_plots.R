@@ -51,16 +51,45 @@ payload_label <- function(payload, fallback) {
   fallback
 }
 
+payload_manifest <- function(folder) {
+  json_file <- file.path(folder, "model_payload_manifest.json")
+  csv_file <- file.path(folder, "model_payload_manifest.csv")
+  if (file.exists(json_file) && requireNamespace("jsonlite", quietly = TRUE)) {
+    out <- tryCatch(jsonlite::read_json(json_file, simplifyVector = TRUE), error = function(e) NULL)
+    if (!is.null(out)) return(as.data.frame(out, stringsAsFactors = FALSE))
+  }
+  if (file.exists(csv_file)) {
+    return(tryCatch(utils::read.csv(csv_file, stringsAsFactors = FALSE), error = function(e) NULL))
+  }
+  NULL
+}
+
+payload_label_from_manifest <- function(manifest, fallback) {
+  if (!is.data.frame(manifest) || !nrow(manifest)) return(fallback)
+  for (name in c("model_label", "plot_label", "model_token", "job_key")) {
+    if (!name %in% names(manifest)) next
+    value <- first_text(manifest[[name]][[1]], "")
+    if (nzchar(value)) return(value)
+  }
+  fallback
+}
+
 payloads <- function(input_dir) {
   files <- list.files(input_dir, pattern = "^model_payload[.]rds$", recursive = TRUE, full.names = TRUE)
   rows <- lapply(files, function(file) {
-    payload <- tryCatch(readRDS(file), error = function(e) NULL)
-    if (is.null(payload)) return(NULL)
     folder <- dirname(file)
+    manifest <- payload_manifest(folder)
+    label <- payload_label_from_manifest(manifest, basename(folder))
+    if (identical(label, basename(folder))) {
+      payload <- tryCatch(readRDS(file), error = function(e) NULL)
+      if (is.null(payload)) return(NULL)
+      label <- payload_label(payload, basename(folder))
+    }
     data.frame(
-      model_label = payload_label(payload, basename(folder)),
+      model_label = label,
       model_folder = normalizePath(folder, winslash = "/", mustWork = FALSE),
       payload_file = normalizePath(file, winslash = "/", mustWork = FALSE),
+      manifest_file = normalizePath(file.path(folder, "model_payload_manifest.json"), winslash = "/", mustWork = FALSE),
       stringsAsFactors = FALSE
     )
   })
