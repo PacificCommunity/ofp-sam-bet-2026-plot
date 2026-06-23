@@ -48,7 +48,6 @@ local_apps:
     label: MFCL Shiny
     icon: chart-no-axes-combined
     runner: local-docker-ssh
-    cpus: "1"
     memory: 8g
     archive_sources:
       - inputs
@@ -62,8 +61,80 @@ local_apps:
       R_REMOTES_NO_ERRORS_FROM_WARNINGS: "true"
       MFCLSHINY_REPORT_DPI: "96"
       MFCLSHINY_OPTIMIZE_FIGURES: "true"
-    command: >-
-      Rscript -e 'Sys.setenv(OMP_NUM_THREADS = "1", OPENBLAS_NUM_THREADS = "1", MKL_NUM_THREADS = "1", VECLIB_MAXIMUM_THREADS = "1", NUMEXPR_NUM_THREADS = "1", MFCLSHINY_MODEL_DIR = Sys.getenv("KFLOW_LOCAL_APP_INPUT_DIR", "/kflow/inputs"), MFCLSHINY_EXPORT_DIR = "/kflow/work/export", R_REMOTES_NO_ERRORS_FROM_WARNINGS = "true"); options(bitmapType = "cairo", Ncpus = 1L); lib <- Sys.getenv("KFLOW_LOCAL_APP_R_LIBS", "/kflow/package-cache/R-library"); dir.create(lib, recursive = TRUE, showWarnings = FALSE); .libPaths(unique(c(lib, .libPaths()))); if (!requireNamespace("mfclshiny", quietly = TRUE)) { options(repos = c(CRAN = "https://cloud.r-project.org")); if (!requireNamespace("remotes", quietly = TRUE)) utils::install.packages("remotes", lib = lib, quiet = TRUE); remotes::install_github("PacificCommunity/mfclshiny", ref = "9bd29ff", lib = lib, upgrade = "never", quiet = TRUE) }; try({ ns <- asNamespace("parallel"); unlockBinding("detectCores", ns); assign("detectCores", function(...) 1L, envir = ns); lockBinding("detectCores", ns) }, silent = TRUE); dir.create("/kflow/work/export", recursive = TRUE, showWarnings = FALSE); mfclshiny::run_mfclshiny(model_dir = Sys.getenv("KFLOW_LOCAL_APP_INPUT_DIR", "/kflow/inputs"), export_dir = "/kflow/work/export", report_ready_export = FALSE, host = "0.0.0.0", port = as.integer(Sys.getenv("PORT", "3838")), launch.browser = FALSE)'
+    command: |
+      Rscript - <<'RS'
+      Sys.setenv(
+        OMP_NUM_THREADS = "1",
+        OPENBLAS_NUM_THREADS = "1",
+        MKL_NUM_THREADS = "1",
+        VECLIB_MAXIMUM_THREADS = "1",
+        NUMEXPR_NUM_THREADS = "1",
+        MFCLSHINY_MODEL_DIR = Sys.getenv("KFLOW_LOCAL_APP_INPUT_DIR", "/kflow/inputs"),
+        MFCLSHINY_EXPORT_DIR = "/kflow/work/export",
+        R_REMOTES_NO_ERRORS_FROM_WARNINGS = "true"
+      )
+      options(
+        bitmapType = "cairo",
+        Ncpus = max(1L, parallel::detectCores() - 2L)
+      )
+
+      lib <- Sys.getenv("KFLOW_LOCAL_APP_R_LIBS", "/kflow/package-cache/R-library")
+      dir.create(lib, recursive = TRUE, showWarnings = FALSE)
+      .libPaths(unique(c(lib, .libPaths())))
+
+      if (!requireNamespace("mfclshiny", quietly = TRUE)) {
+        options(repos = c(CRAN = "https://cloud.r-project.org"))
+        if (!requireNamespace("remotes", quietly = TRUE)) {
+          utils::install.packages("remotes", lib = lib, quiet = TRUE)
+        }
+        remotes::install_github(
+          "PacificCommunity/mfclshiny",
+          ref = "9bd29ff",
+          lib = lib,
+          upgrade = "never",
+          quiet = TRUE
+        )
+      }
+
+      patch_mfclshiny_report_ready <- function() {
+        helpers <- file.path(
+          system.file(package = "mfclshiny"),
+          "app", "R", "server", "report_ready_helpers.R"
+        )
+        if (!file.exists(helpers)) {
+          return(invisible(FALSE))
+        }
+
+        txt <- readLines(helpers, warn = FALSE)
+        original <- txt
+        replace_fixed <- function(x, from, to) {
+          gsub(from, to, x, fixed = TRUE)
+        }
+        txt <- replace_fixed(txt, "registry <- rv$report_ready_plots", "registry <- shiny::isolate(rv$report_ready_plots)")
+        txt <- replace_fixed(txt, "registry <- rv$report_ready_tables", "registry <- shiny::isolate(rv$report_ready_tables)")
+        txt <- replace_fixed(txt, "table_registry <- rv$report_ready_tables", "table_registry <- shiny::isolate(rv$report_ready_tables)")
+        txt <- replace_fixed(
+          txt,
+          "expanded[[variant_id]] <- variant_registry$report_ready_plots[[variant_id]]",
+          "expanded[[variant_id]] <- shiny::isolate(variant_registry$report_ready_plots[[variant_id]])"
+        )
+        if (!identical(txt, original)) {
+          writeLines(txt, helpers, useBytes = TRUE)
+        }
+        invisible(!identical(txt, original))
+      }
+      patch_mfclshiny_report_ready()
+
+      dir.create("/kflow/work/export", recursive = TRUE, showWarnings = FALSE)
+      mfclshiny::run_mfclshiny(
+        model_dir = Sys.getenv("KFLOW_LOCAL_APP_INPUT_DIR", "/kflow/inputs"),
+        export_dir = "/kflow/work/export",
+        report_ready_export = FALSE,
+        host = "0.0.0.0",
+        port = as.integer(Sys.getenv("PORT", "3838")),
+        launch.browser = FALSE
+      )
+      RS
 triggers:
   on_success:
     - key: report-from-results
