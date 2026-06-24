@@ -22,8 +22,8 @@ env:
   REPORT_FILE_STEM: bet-2026-report
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
   KFLOW_RUNTIME_UPDATE: auto
-  KFLOW_RUNTIME_PACKAGES: mfclshiny=PacificCommunity/mfclshiny@5e714c1
-  MFCLSHINY_GITHUB_REF: "5e714c1"
+  KFLOW_RUNTIME_PACKAGES: mfclshiny=PacificCommunity/mfclshiny@2b7ad10
+  MFCLSHINY_GITHUB_REF: "2b7ad10"
   KFLOW_RUNTIME_GITHUB_AUTH: "true"
   KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME: "true"
   MFCLSHINY_REPORT_DPI: "180"
@@ -60,7 +60,7 @@ local_apps:
       VECLIB_MAXIMUM_THREADS: "1"
       NUMEXPR_NUM_THREADS: "1"
       R_REMOTES_NO_ERRORS_FROM_WARNINGS: "true"
-      MFCLSHINY_GITHUB_REF: "5e714c1"
+      MFCLSHINY_GITHUB_REF: "2b7ad10"
       MFCLSHINY_AUTO_LOAD: "true"
       MFCLSHINY_REPORT_DPI: "96"
       MFCLSHINY_OPTIMIZE_FIGURES: "true"
@@ -89,7 +89,13 @@ local_apps:
       dir.create(lib, recursive = TRUE, showWarnings = FALSE)
       .libPaths(unique(c(lib, .libPaths())))
 
-      mfclshiny_ref <- Sys.getenv("MFCLSHINY_GITHUB_REF", "5e714c1")
+      mfclshiny_ref <- Sys.getenv("MFCLSHINY_GITHUB_REF", "2b7ad10")
+      cleanup_stale_locks <- function() {
+        lock_dirs <- Sys.glob(file.path(lib, "00LOCK*"))
+        if (length(lock_dirs)) {
+          unlink(lock_dirs, recursive = TRUE, force = TRUE)
+        }
+      }
       desc_field <- function(desc, name) {
         value <- tryCatch(desc[[name]], error = function(e) "")
         if (is.null(value) || !length(value) || is.na(value[[1L]])) "" else as.character(value[[1L]])
@@ -98,6 +104,9 @@ local_apps:
         suppressWarnings(utils::packageDescription("mfclshiny", lib.loc = lib)),
         error = function(e) NULL
       )
+      if (length(installed_desc) == 1L && is.na(installed_desc[[1L]])) {
+        installed_desc <- NULL
+      }
       installed_sha <- desc_field(installed_desc, "RemoteSha")
       installed_ref <- desc_field(installed_desc, "RemoteRef")
       ref_is_sha <- grepl("^[0-9a-f]{7,40}$", mfclshiny_ref, ignore.case = TRUE)
@@ -108,11 +117,14 @@ local_apps:
       }
       if (is.null(installed_desc) || !isTRUE(ref_matches)) {
         options(repos = c(CRAN = "https://cloud.r-project.org"))
+        cleanup_stale_locks()
         if (!requireNamespace("remotes", quietly = TRUE)) {
           utils::install.packages("remotes", lib = lib, quiet = TRUE)
         }
         if (!is.null(installed_desc)) {
           try(utils::remove.packages("mfclshiny", lib = lib), silent = TRUE)
+        } else {
+          unlink(file.path(lib, "mfclshiny"), recursive = TRUE, force = TRUE)
         }
         remotes::install_github(
           "PacificCommunity/mfclshiny",
