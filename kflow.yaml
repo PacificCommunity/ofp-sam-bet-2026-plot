@@ -22,8 +22,8 @@ env:
   REPORT_FILE_STEM: bet-2026-report
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
   KFLOW_RUNTIME_UPDATE: auto
-  KFLOW_RUNTIME_PACKAGES: mfclshiny=PacificCommunity/mfclshiny@4ca50de
-  MFCLSHINY_GITHUB_REF: "4ca50de"
+  KFLOW_RUNTIME_PACKAGES: mfclshiny=PacificCommunity/mfclshiny@3dd04a6
+  MFCLSHINY_GITHUB_REF: "3dd04a6"
   KFLOW_RUNTIME_GITHUB_AUTH: "true"
   KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME: "true"
   MFCLSHINY_REPORT_DPI: "180"
@@ -60,7 +60,7 @@ local_apps:
       VECLIB_MAXIMUM_THREADS: "1"
       NUMEXPR_NUM_THREADS: "1"
       R_REMOTES_NO_ERRORS_FROM_WARNINGS: "true"
-      MFCLSHINY_GITHUB_REF: "4ca50de"
+      MFCLSHINY_GITHUB_REF: "3dd04a6"
       MFCLSHINY_AUTO_LOAD: "true"
       MFCLSHINY_REPORT_DPI: "96"
       MFCLSHINY_OPTIMIZE_FIGURES: "true"
@@ -89,7 +89,7 @@ local_apps:
       dir.create(lib, recursive = TRUE, showWarnings = FALSE)
       .libPaths(unique(c(lib, .libPaths())))
 
-      mfclshiny_ref <- Sys.getenv("MFCLSHINY_GITHUB_REF", "4ca50de")
+      mfclshiny_ref <- Sys.getenv("MFCLSHINY_GITHUB_REF", "3dd04a6")
       cleanup_stale_locks <- function() {
         lock_dirs <- Sys.glob(file.path(lib, "00LOCK*"))
         if (length(lock_dirs)) {
