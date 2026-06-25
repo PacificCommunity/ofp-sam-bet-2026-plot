@@ -1,7 +1,7 @@
 name: ofp-sam-bet-2026-results
 description: Build report-ready BET 2026 figures, tables, and report section seeds from upstream model payloads.
 command: bash run.sh
-docker_image: ghcr.io/pacificcommunity/tuna-flow:v1.7
+docker_image: ghcr.io/pacificcommunity/tuna-flow:v1.8
 resources:
   cpus: 2
   memory: 12GB
@@ -22,8 +22,8 @@ env:
   REPORT_FILE_STEM: bet-2026-report
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
   KFLOW_RUNTIME_UPDATE: auto
-  KFLOW_RUNTIME_PACKAGES: mfclshiny=PacificCommunity/mfclshiny@e1ad578
-  MFCLSHINY_GITHUB_REF: "e1ad578"
+  KFLOW_RUNTIME_PACKAGES: mfclshiny=PacificCommunity/mfclshiny@02f5bbd
+  MFCLSHINY_GITHUB_REF: "02f5bbd"
   KFLOW_RUNTIME_GITHUB_AUTH: "true"
   KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME: "true"
   MFCLSHINY_REPORT_DPI: "180"
@@ -60,11 +60,11 @@ local_apps:
       VECLIB_MAXIMUM_THREADS: "1"
       NUMEXPR_NUM_THREADS: "1"
       R_REMOTES_NO_ERRORS_FROM_WARNINGS: "true"
-      MFCLSHINY_GITHUB_REF: "e1ad578"
+      MFCLSHINY_GITHUB_REF: "02f5bbd"
       MFCLSHINY_AUTO_LOAD: "true"
       MFCLSHINY_REPORT_DPI: "96"
       MFCLSHINY_OPTIMIZE_FIGURES: "true"
-      MFCLSHINY_PREVIEW_DPI: "72"
+      MFCLSHINY_PREVIEW_DPI: "48"
       MFCLSHINY_PREVIEW_MAX_WIDTH: "980"
       MFCLSHINY_PREVIEW_MAX_HEIGHT: "980"
       MFCLSHINY_REPORT_CARD_LIMIT: "60"
@@ -89,7 +89,7 @@ local_apps:
       dir.create(lib, recursive = TRUE, showWarnings = FALSE)
       .libPaths(unique(c(lib, .libPaths())))
 
-      mfclshiny_ref <- Sys.getenv("MFCLSHINY_GITHUB_REF", "e1ad578")
+      mfclshiny_ref <- Sys.getenv("MFCLSHINY_GITHUB_REF", "02f5bbd")
       cleanup_stale_locks <- function() {
         lock_dirs <- Sys.glob(file.path(lib, "00LOCK*"))
         if (length(lock_dirs)) {
@@ -136,10 +136,56 @@ local_apps:
       }
 
       dir.create("/kflow/work/export", recursive = TRUE, showWarnings = FALSE)
-      payload_root <- Sys.getenv("KFLOW_LOCAL_APP_INPUT_DIR", "/kflow/inputs")
-      if (!length(list.files(payload_root, pattern = "^model_payload[.]rds$", recursive = TRUE, full.names = TRUE))) {
-        payload_root <- Sys.getenv("KFLOW_LOCAL_APP_OUTPUT_DIR", "/kflow/outputs")
+      has_payload_child <- function(path) {
+        if (!dir.exists(path)) return(FALSE)
+        children <- list.dirs(path, full.names = TRUE, recursive = FALSE)
+        any(file.exists(file.path(children, "model_payload.rds")))
       }
+      has_payload_here <- function(path) {
+        dir.exists(path) && file.exists(file.path(path, "model_payload.rds"))
+      }
+      payload_parent_from_tree <- function(path) {
+        if (!dir.exists(path)) return("")
+        payloads <- list.files(
+          path,
+          pattern = "^model_payload[.]rds$",
+          recursive = TRUE,
+          full.names = TRUE
+        )
+        if (!length(payloads)) return("")
+        parent_dirs <- dirname(dirname(payloads))
+        counts <- sort(table(parent_dirs), decreasing = TRUE)
+        names(counts)[[1]]
+      }
+      resolve_payload_root <- function(...) {
+        roots <- unique(normalizePath(
+          c(...),
+          winslash = "/",
+          mustWork = FALSE
+        ))
+        candidates <- unique(unlist(lapply(roots, function(root) {
+          c(
+            file.path(root, "inputs", "outputs", "models"),
+            file.path(root, "outputs", "models"),
+            file.path(root, "models"),
+            file.path(root, "inputs"),
+            file.path(root, "outputs"),
+            root
+          )
+        }), use.names = FALSE))
+        child_hits <- candidates[vapply(candidates, has_payload_child, logical(1))]
+        if (length(child_hits)) return(child_hits[[1]])
+        here_hits <- candidates[vapply(candidates, has_payload_here, logical(1))]
+        if (length(here_hits)) return(here_hits[[1]])
+        tree_hits <- vapply(roots, payload_parent_from_tree, character(1))
+        tree_hits <- tree_hits[nzchar(tree_hits)]
+        if (length(tree_hits)) return(tree_hits[[1]])
+        roots[[1]]
+      }
+      payload_root <- resolve_payload_root(
+        Sys.getenv("KFLOW_LOCAL_APP_INPUT_DIR", "/kflow/inputs"),
+        Sys.getenv("KFLOW_LOCAL_APP_OUTPUT_DIR", "/kflow/outputs")
+      )
       mfclshiny::run_mfclshiny(
         model_dir = payload_root,
         export_dir = "/kflow/work/export",
