@@ -135,18 +135,23 @@ if (nzchar(token_name)) {
 }
 download_github_archive <- function(repo, ref) {
   archive <- tempfile(pattern = "kflow-runtime-", fileext = ".tar.gz")
-  url <- sprintf("https://codeload.github.com/%s/tar.gz/%s", repo, ref)
+  url <- if (nzchar(token)) {
+    sprintf("https://api.github.com/repos/%s/tarball/%s", repo, ref)
+  } else {
+    sprintf("https://codeload.github.com/%s/tar.gz/%s", repo, ref)
+  }
   curl <- Sys.which("curl")
   if (nzchar(curl)) {
     args <- c("-fsSL", "--retry", "3", "--retry-delay", "2", "-w", "%{http_code}", "-o", archive)
     if (nzchar(token)) {
-      args <- c("-H", paste("Authorization: Bearer", token), args)
+      args <- c(
+        "-H", paste("Authorization: Bearer", token),
+        "-H", "Accept: application/vnd.github+json",
+        args
+      )
     }
-    output <- tryCatch(
-      system2(curl, c(args, url), stdout = TRUE, stderr = TRUE),
-      warning = function(w) structure(conditionMessage(w), status = 1L),
-      error = function(e) structure(conditionMessage(e), status = 1L)
-    )
+    output <- tryCatch(suppressWarnings(system2(curl, c(args, url), stdout = TRUE, stderr = TRUE)),
+      error = function(e) structure(conditionMessage(e), status = 1L))
     status <- attr(output, "status")
     if (is.null(status)) status <- 0L
     code <- tail(grep("^[0-9]{3}$", as.character(output), value = TRUE), 1)
