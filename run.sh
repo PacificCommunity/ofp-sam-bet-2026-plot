@@ -229,6 +229,29 @@ install_local_source <- function(path, lib) {
     stop("R CMD INSTALL failed for ", basename(path), "\n", detail, call. = FALSE)
   }
 }
+write_remote_metadata <- function(package, repo, ref, lib) {
+  desc_path <- system.file("DESCRIPTION", package = package, lib.loc = lib)
+  if (!nzchar(desc_path) || !file.exists(desc_path)) return(invisible(FALSE))
+  repo_parts <- strsplit(repo, "/", fixed = TRUE)[[1]]
+  remote <- list(
+    RemoteType = "github",
+    RemoteHost = "api.github.com",
+    RemoteUsername = repo_parts[[1]],
+    RemoteRepo = repo_parts[[length(repo_parts)]],
+    RemoteRef = ref,
+    RemoteSha = ref
+  )
+  fields <- as.list(read.dcf(desc_path)[1, ])
+  fields[names(remote)] <- remote
+  write.dcf(as.data.frame(fields, stringsAsFactors = FALSE, check.names = FALSE), desc_path)
+  meta_path <- system.file("Meta", "package.rds", package = package, lib.loc = lib)
+  if (file.exists(meta_path)) {
+    meta <- readRDS(meta_path)
+    meta[["DESCRIPTION"]][names(remote)] <- unlist(remote)
+    saveRDS(meta, meta_path)
+  }
+  invisible(TRUE)
+}
 for (spec in missing) {
   message("[kflow-runtime-update] Installing missing runtime package ", spec$package, " from ", spec$repo, "@", spec$ref, ".")
   err <- tryCatch({
@@ -242,6 +265,7 @@ for (spec in missing) {
     )
     on.exit(unlink(archive, recursive = TRUE, force = TRUE), add = TRUE)
     install_local_source(archive, lib)
+    write_remote_metadata(spec$package, spec$repo, spec$ref, lib)
     NULL
   }, error = function(e) e)
   if (inherits(err, "error")) {

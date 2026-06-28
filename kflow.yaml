@@ -171,6 +171,26 @@ local_apps:
           detail <- paste(tail(as.character(install_output), 30), collapse = "\n")
           stop("R CMD INSTALL failed for mfclshiny\n", detail, call. = FALSE)
         }
+        desc_path <- system.file("DESCRIPTION", package = "mfclshiny", lib.loc = lib)
+        if (nzchar(desc_path) && file.exists(desc_path)) {
+          remote <- list(
+            RemoteType = "github",
+            RemoteHost = "api.github.com",
+            RemoteUsername = "PacificCommunity",
+            RemoteRepo = "mfclshiny",
+            RemoteRef = mfclshiny_ref,
+            RemoteSha = mfclshiny_ref
+          )
+          fields <- as.list(read.dcf(desc_path)[1, ])
+          fields[names(remote)] <- remote
+          write.dcf(as.data.frame(fields, stringsAsFactors = FALSE, check.names = FALSE), desc_path)
+          meta_path <- system.file("Meta", "package.rds", package = "mfclshiny", lib.loc = lib)
+          if (file.exists(meta_path)) {
+            meta <- readRDS(meta_path)
+            meta[["DESCRIPTION"]][names(remote)] <- unlist(remote)
+            saveRDS(meta, meta_path)
+          }
+        }
         installed_desc <- tryCatch(
           suppressWarnings(utils::packageDescription("mfclshiny", lib.loc = lib)),
           error = function(e) NULL
