@@ -1,7 +1,7 @@
 name: ofp-sam-bet-2026-results
 description: Build report-ready BET 2026 figures, tables, and report section seeds from upstream model payloads.
 command: bash run.sh
-docker_image: ghcr.io/pacificcommunity/tuna-flow:v1.11
+docker_image: ghcr.io/pacificcommunity/tuna-flow:v1.10
 resources:
   cpus: 2
   memory: 12GB
@@ -22,11 +22,11 @@ env:
   PLOT_RENDER_REVIEW_HTML: "false"
   REPORT_QMD: assessment-report.qmd
   REPORT_FILE_STEM: bet-2026-report
-  KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "false"
-  KFLOW_RUNTIME_UPDATE: never
-  TUNA_FLOW_RUNTIME_UPDATE: never
-  KFLOW_RUNTIME_PACKAGES: none
-  KFLOW_REPO_RUNTIME_PACKAGES: none
+  KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
+  KFLOW_RUNTIME_UPDATE: direct
+  TUNA_FLOW_RUNTIME_UPDATE: direct
+  KFLOW_RUNTIME_PACKAGES: mfclshiny=PacificCommunity/mfclshiny@fec9ab16b1f7627428d88f65d9cd5c0b55d104b1
+  KFLOW_REPO_RUNTIME_PACKAGES: mfclshiny=PacificCommunity/mfclshiny@fec9ab16b1f7627428d88f65d9cd5c0b55d104b1
   MFCLSHINY_GITHUB_REF: "fec9ab16b1f7627428d88f65d9cd5c0b55d104b1"
   KFLOW_RUNTIME_GITHUB_AUTH: "true"
   KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME: "true"
@@ -92,7 +92,7 @@ local_apps:
       lib <- Sys.getenv("KFLOW_LOCAL_APP_R_LIBS", "/kflow/package-cache/R-library")
       dir.create(lib, recursive = TRUE, showWarnings = FALSE)
       base_libs <- setdiff(.libPaths(), normalizePath(lib, winslash = "/", mustWork = FALSE))
-      .libPaths(unique(c(base_libs, lib)))
+      .libPaths(unique(c(lib, base_libs)))
 
       mfclshiny_ref <- Sys.getenv("MFCLSHINY_GITHUB_REF", "fec9ab16b1f7627428d88f65d9cd5c0b55d104b1")
       desc_field <- function(desc, name) {
@@ -115,7 +115,36 @@ local_apps:
         identical(installed_ref, mfclshiny_ref)
       }
       if (is.null(installed_desc) || !isTRUE(ref_matches)) {
-        stop("Bundled mfclshiny does not match MFCLSHINY_GITHUB_REF: ", mfclshiny_ref, call. = FALSE)
+        token <- Sys.getenv("GITHUB_PAT", Sys.getenv("GITHUB_TOKEN", ""))
+        if (!nzchar(token)) {
+          stop("mfclshiny cache does not match MFCLSHINY_GITHUB_REF and no GitHub token was forwarded.", call. = FALSE)
+        }
+        if (!requireNamespace("remotes", quietly = TRUE)) {
+          utils::install.packages("remotes", lib = lib, dependencies = TRUE, repos = "https://cloud.r-project.org")
+        }
+        remotes::install_github(
+          "PacificCommunity/mfclshiny",
+          ref = mfclshiny_ref,
+          auth_token = token,
+          lib = lib,
+          upgrade = "never",
+          force = TRUE,
+          quiet = TRUE
+        )
+        installed_desc <- tryCatch(
+          suppressWarnings(utils::packageDescription("mfclshiny", lib.loc = lib)),
+          error = function(e) NULL
+        )
+        installed_sha <- desc_field(installed_desc, "RemoteSha")
+        installed_ref <- desc_field(installed_desc, "RemoteRef")
+        ref_matches <- if (isTRUE(ref_is_sha)) {
+          nzchar(installed_sha) && startsWith(tolower(installed_sha), tolower(mfclshiny_ref))
+        } else {
+          identical(installed_ref, mfclshiny_ref)
+        }
+      }
+      if (is.null(installed_desc) || !isTRUE(ref_matches)) {
+        stop("mfclshiny does not match MFCLSHINY_GITHUB_REF: ", mfclshiny_ref, call. = FALSE)
       }
 
       dir.create("/kflow/work/export", recursive = TRUE, showWarnings = FALSE)
