@@ -167,11 +167,45 @@ download_github_archive <- function(repo, ref) {
   }
   archive
 }
+clone_github_source <- function(repo, ref) {
+  git <- Sys.which("git")
+  if (!nzchar(git)) {
+    stop("git is required for runtime package source fallback", call. = FALSE)
+  }
+  source_dir <- tempfile(pattern = "kflow-runtime-src-")
+  unlink(source_dir, recursive = TRUE, force = TRUE)
+  git_url <- sprintf("https://github.com/%s.git", repo)
+  auth_args <- character()
+  if (nzchar(token)) {
+    auth_args <- c("-c", paste0("http.https://github.com/.extraheader=Authorization: Bearer ", token))
+  }
+  run_git <- function(args) {
+    status <- system2(git, c(auth_args, args), stdout = FALSE, stderr = FALSE)
+    identical(as.integer(status), 0L)
+  }
+  if (!run_git(c("clone", "--quiet", "--depth", "50", git_url, source_dir))) {
+    stop("git clone failed for ", repo, call. = FALSE)
+  }
+  if (!run_git(c("-C", source_dir, "checkout", "--quiet", ref))) {
+    if (!run_git(c("-C", source_dir, "fetch", "--quiet", "--depth", "1", "origin", ref)) ||
+        !run_git(c("-C", source_dir, "checkout", "--quiet", "FETCH_HEAD"))) {
+      stop("git checkout failed for ", repo, "@", ref, call. = FALSE)
+    }
+  }
+  source_dir
+}
 for (spec in missing) {
   message("[kflow-runtime-update] Installing missing runtime package ", spec$package, " from ", spec$repo, "@", spec$ref, ".")
   err <- tryCatch({
-    archive <- download_github_archive(spec$repo, spec$ref)
-    on.exit(unlink(archive), add = TRUE)
+    archive <- tryCatch(
+      download_github_archive(spec$repo, spec$ref),
+      error = function(err) {
+        message("[kflow-runtime-update] Runtime archive download failed for ", spec$package,
+                "; trying git clone fallback.")
+        clone_github_source(spec$repo, spec$ref)
+      }
+    )
+    on.exit(unlink(archive, recursive = TRUE, force = TRUE), add = TRUE)
     remotes::install_local(
       archive,
       lib = lib,
