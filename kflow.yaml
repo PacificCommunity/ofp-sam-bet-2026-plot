@@ -23,9 +23,9 @@ env:
   REPORT_QMD: assessment-report.qmd
   REPORT_FILE_STEM: bet-2026-report
   KFLOW_RUNTIME_REQUIRE_PRIVATE_PACKAGES: "true"
-  KFLOW_RUNTIME_UPDATE: auto
-  KFLOW_RUNTIME_PACKAGES: mfclshiny=PacificCommunity/mfclshiny@fec9ab1
-  MFCLSHINY_GITHUB_REF: "fec9ab1"
+  KFLOW_RUNTIME_UPDATE: direct
+  KFLOW_RUNTIME_PACKAGES: mfclshiny=PacificCommunity/mfclshiny@fec9ab16b1f7627428d88f65d9cd5c0b55d104b1
+  MFCLSHINY_GITHUB_REF: "fec9ab16b1f7627428d88f65d9cd5c0b55d104b1"
   KFLOW_RUNTIME_GITHUB_AUTH: "true"
   KFLOW_FORWARD_GITHUB_TOKEN_TO_RUNTIME: "true"
   MFCLSHINY_REPORT_DPI: "180"
@@ -62,7 +62,7 @@ local_apps:
       VECLIB_MAXIMUM_THREADS: "1"
       NUMEXPR_NUM_THREADS: "1"
       R_REMOTES_NO_ERRORS_FROM_WARNINGS: "true"
-      MFCLSHINY_GITHUB_REF: "fec9ab1"
+      MFCLSHINY_GITHUB_REF: "fec9ab16b1f7627428d88f65d9cd5c0b55d104b1"
       MFCLSHINY_AUTO_LOAD: "true"
       MFCLSHINY_REPORT_DPI: "96"
       MFCLSHINY_OPTIMIZE_FIGURES: "true"
@@ -91,7 +91,7 @@ local_apps:
       dir.create(lib, recursive = TRUE, showWarnings = FALSE)
       .libPaths(unique(c(lib, .libPaths())))
 
-      mfclshiny_ref <- Sys.getenv("MFCLSHINY_GITHUB_REF", "fec9ab1")
+      mfclshiny_ref <- Sys.getenv("MFCLSHINY_GITHUB_REF", "fec9ab16b1f7627428d88f65d9cd5c0b55d104b1")
       cleanup_stale_locks <- function() {
         lock_dirs <- Sys.glob(file.path(lib, "00LOCK*"))
         if (length(lock_dirs)) {
@@ -123,16 +123,54 @@ local_apps:
         if (!requireNamespace("remotes", quietly = TRUE)) {
           utils::install.packages("remotes", lib = lib, quiet = TRUE)
         }
+        token <- ""
+        for (name in c("GITHUB_PAT", "GIT_PAT", "GH_TOKEN", "KFLOW_GITHUB_TOKEN", "KFLOW_PERSONAL_TOKEN")) {
+          value <- Sys.getenv(name, "")
+          if (nzchar(value)) {
+            token <- value
+            break
+          }
+        }
+        archive <- tempfile(pattern = "mfclshiny-", fileext = ".tar.gz")
+        archive_url <- sprintf(
+          "https://codeload.github.com/PacificCommunity/mfclshiny/tar.gz/%s",
+          mfclshiny_ref
+        )
+        curl <- Sys.which("curl")
+        if (nzchar(curl)) {
+          args <- c("-fsSL", "--retry", "3", "--retry-delay", "2", "-o", archive)
+          if (nzchar(token)) {
+            args <- c("-H", paste("Authorization: Bearer", token), args)
+          }
+          status <- system2(curl, c(args, archive_url), stdout = FALSE, stderr = FALSE)
+          if (!identical(status, 0L)) {
+            stop("Failed to download mfclshiny archive")
+          }
+        } else {
+          headers <- if (nzchar(token)) c(Authorization = paste("Bearer", token)) else NULL
+          status <- utils::download.file(
+            archive_url,
+            archive,
+            mode = "wb",
+            quiet = TRUE,
+            method = "libcurl",
+            headers = headers
+          )
+          if (!identical(status, 0L)) {
+            stop("Failed to download mfclshiny archive")
+          }
+        }
+        on.exit(unlink(archive), add = TRUE)
         if (!is.null(installed_desc)) {
           try(utils::remove.packages("mfclshiny", lib = lib), silent = TRUE)
         } else {
           unlink(file.path(lib, "mfclshiny"), recursive = TRUE, force = TRUE)
         }
-        remotes::install_github(
-          "PacificCommunity/mfclshiny",
-          ref = mfclshiny_ref,
+        remotes::install_local(
+          archive,
           lib = lib,
           upgrade = "never",
+          force = TRUE,
           quiet = TRUE
         )
       }

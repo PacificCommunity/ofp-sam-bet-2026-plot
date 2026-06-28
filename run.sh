@@ -19,6 +19,13 @@ runtime_updates_disabled() {
   esac
 }
 
+runtime_updates_direct() {
+  case "${KFLOW_RUNTIME_UPDATE:-auto}" in
+    direct|DIRECT|url|URL|download|DOWNLOAD) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 ensure_runtime_library() {
   local preferred="${R_LIBS_USER:-${KFLOW_RUNTIME_LIBRARY:-}}"
   local fallback="${ROOT}/.R-library"
@@ -75,7 +82,29 @@ lib <- Sys.getenv("R_LIBS_USER", "")
 if (!nzchar(lib)) quit(save = "no", status = 43)
 dir.create(lib, recursive = TRUE, showWarnings = FALSE)
 .libPaths(unique(c(lib, .libPaths())))
-missing <- specs[!vapply(specs, function(spec) requireNamespace(spec$package, quietly = TRUE), logical(1))]
+desc_field <- function(desc, name) {
+  value <- tryCatch(desc[[name]], error = function(e) "")
+  if (is.null(value) || !length(value) || is.na(value[[1L]])) "" else as.character(value[[1L]])
+}
+installed_desc <- function(package) {
+  desc <- tryCatch(
+    suppressWarnings(utils::packageDescription(package, lib.loc = lib)),
+    error = function(e) NULL
+  )
+  if (length(desc) == 1L && is.na(desc[[1L]])) NULL else desc
+}
+needs_install <- function(spec) {
+  desc <- installed_desc(spec$package)
+  if (is.null(desc)) return(TRUE)
+  installed_sha <- desc_field(desc, "RemoteSha")
+  installed_ref <- desc_field(desc, "RemoteRef")
+  ref_is_sha <- grepl("^[0-9a-f]{7,40}$", spec$ref, ignore.case = TRUE)
+  if (ref_is_sha) {
+    return(!nzchar(installed_sha) || !startsWith(tolower(installed_sha), tolower(spec$ref)))
+  }
+  !identical(installed_ref, spec$ref)
+}
+missing <- specs[vapply(specs, needs_install, logical(1))]
 if (!length(missing)) quit(save = "no", status = 0)
 options(repos = c(CRAN = "https://cloud.r-project.org"))
 if (!requireNamespace("remotes", quietly = TRUE)) {
@@ -89,13 +118,35 @@ for (name in c("GITHUB_PAT", "GIT_PAT", "GH_TOKEN", "KFLOW_GITHUB_TOKEN", "KFLOW
     break
   }
 }
+download_github_archive <- function(repo, ref) {
+  archive <- tempfile(pattern = "kflow-runtime-", fileext = ".tar.gz")
+  url <- sprintf("https://codeload.github.com/%s/tar.gz/%s", repo, ref)
+  curl <- Sys.which("curl")
+  if (nzchar(curl)) {
+    args <- c("-fsSL", "--retry", "3", "--retry-delay", "2", "-o", archive)
+    if (nzchar(token)) {
+      args <- c("-H", paste("Authorization: Bearer", token), args)
+    }
+    status <- system2(curl, c(args, url), stdout = FALSE, stderr = FALSE)
+    if (!identical(status, 0L)) {
+      stop("download failed from ", url)
+    }
+  } else {
+    headers <- if (nzchar(token)) c(Authorization = paste("Bearer", token)) else NULL
+    status <- utils::download.file(url, archive, mode = "wb", quiet = TRUE, method = "libcurl", headers = headers)
+    if (!identical(status, 0L)) {
+      stop("download failed from ", url)
+    }
+  }
+  archive
+}
 for (spec in missing) {
   message("[kflow-runtime-update] Installing missing runtime package ", spec$package, " from ", spec$repo, "@", spec$ref, ".")
   err <- tryCatch({
-    remotes::install_github(
-      spec$repo,
-      ref = spec$ref,
-      auth_token = if (nzchar(token)) token else NULL,
+    archive <- download_github_archive(spec$repo, spec$ref)
+    on.exit(unlink(archive), add = TRUE)
+    remotes::install_local(
+      archive,
       lib = lib,
       upgrade = "never",
       force = TRUE,
@@ -123,6 +174,11 @@ prepare_runtime_packages() {
   fi
   runtime_packages_disabled && return 0
   ensure_runtime_library
+  if runtime_updates_direct; then
+    install_missing_runtime_packages
+    drop_runtime_tokens
+    return 0
+  fi
   if [[ -x /usr/local/bin/30-update-kflow-runtime-packages ]]; then
     if bash /usr/local/bin/30-update-kflow-runtime-packages; then
       :
