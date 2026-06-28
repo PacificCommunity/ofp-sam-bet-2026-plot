@@ -120,18 +120,57 @@ local_apps:
         if (!nzchar(token)) {
           stop("mfclshiny cache does not match MFCLSHINY_GITHUB_REF and no GitHub token was forwarded.", call. = FALSE)
         }
-        if (!requireNamespace("remotes", quietly = TRUE)) {
-          utils::install.packages("remotes", lib = lib, dependencies = TRUE, repos = "https://cloud.r-project.org")
+        git <- Sys.which("git")
+        if (!nzchar(git)) {
+          stop("git is required to install mfclshiny for the local app.", call. = FALSE)
         }
-        remotes::install_github(
-          "PacificCommunity/mfclshiny",
-          ref = mfclshiny_ref,
-          auth_token = token,
-          lib = lib,
-          upgrade = "never",
-          force = TRUE,
-          quiet = TRUE
+        source_dir <- tempfile(pattern = "mfclshiny-src-")
+        askpass <- tempfile(pattern = "mfclshiny-askpass-")
+        writeLines(c(
+          "#!/bin/sh",
+          "case \"$1\" in",
+          "  *Username*) printf '%s\\n' x-access-token ;;",
+          "  *) printf '%s\\n' \"$KFLOW_GIT_ASKPASS_TOKEN\" ;;",
+          "esac"
+        ), askpass)
+        Sys.chmod(askpass, mode = "0700")
+        run_git <- function(args) {
+          status <- system2(
+            git,
+            args,
+            env = c(
+              paste0("GIT_ASKPASS=", askpass),
+              "GIT_TERMINAL_PROMPT=0",
+              paste0("KFLOW_GIT_ASKPASS_TOKEN=", token)
+            ),
+            stdout = FALSE,
+            stderr = FALSE
+          )
+          identical(as.integer(status), 0L)
+        }
+        git_url <- "https://github.com/PacificCommunity/mfclshiny.git"
+        if (!run_git(c("clone", "--quiet", "--depth", "50", git_url, source_dir))) {
+          stop("git clone failed for PacificCommunity/mfclshiny.", call. = FALSE)
+        }
+        if (!run_git(c("-C", source_dir, "checkout", "--quiet", mfclshiny_ref))) {
+          if (!run_git(c("-C", source_dir, "fetch", "--quiet", "--depth", "1", "origin", mfclshiny_ref)) ||
+              !run_git(c("-C", source_dir, "checkout", "--quiet", "FETCH_HEAD"))) {
+            stop("git checkout failed for PacificCommunity/mfclshiny@", mfclshiny_ref, call. = FALSE)
+          }
+        }
+        install_output <- system2(
+          file.path(R.home("bin"), "R"),
+          c("CMD", "INSTALL", "--library", lib, source_dir),
+          stdout = TRUE,
+          stderr = TRUE
         )
+        install_status <- attr(install_output, "status")
+        if (is.null(install_status)) install_status <- 0L
+        unlink(c(source_dir, askpass), recursive = TRUE, force = TRUE)
+        if (!identical(as.integer(install_status), 0L)) {
+          detail <- paste(tail(as.character(install_output), 30), collapse = "\n")
+          stop("R CMD INSTALL failed for mfclshiny\n", detail, call. = FALSE)
+        }
         installed_desc <- tryCatch(
           suppressWarnings(utils::packageDescription("mfclshiny", lib.loc = lib)),
           error = function(e) NULL
