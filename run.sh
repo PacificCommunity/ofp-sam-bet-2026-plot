@@ -29,7 +29,7 @@ runtime_updates_disabled() {
 
 runtime_updates_direct() {
   case "$(runtime_update_mode)" in
-    direct|DIRECT|url|URL|download|DOWNLOAD) return 0 ;;
+    auto|AUTO|always|ALWAYS|token|TOKEN|direct|DIRECT|url|URL|download|DOWNLOAD) return 0 ;;
     *) return 1 ;;
   esac
 }
