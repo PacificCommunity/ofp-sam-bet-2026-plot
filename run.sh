@@ -216,7 +216,7 @@ install_local_source <- function(path, lib) {
   output <- tryCatch(
     system2(
       r_bin,
-      c("CMD", "INSTALL", "--library", lib, path),
+      c("CMD", "INSTALL", "-l", lib, path),
       stdout = TRUE,
       stderr = TRUE
     ),

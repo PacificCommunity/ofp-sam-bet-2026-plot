@@ -160,7 +160,7 @@ local_apps:
         }
         install_output <- system2(
           file.path(R.home("bin"), "R"),
-          c("CMD", "INSTALL", "--library", lib, source_dir),
+          c("CMD", "INSTALL", "-l", lib, source_dir),
           stdout = TRUE,
           stderr = TRUE
         )
