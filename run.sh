@@ -105,12 +105,11 @@ needs_install <- function(spec) {
   desc <- installed_desc(spec$package)
   if (is.null(desc)) return(TRUE)
   installed_sha <- desc_field(desc, "RemoteSha")
-  installed_ref <- desc_field(desc, "RemoteRef")
   ref_is_sha <- grepl("^[0-9a-f]{7,40}$", spec$ref, ignore.case = TRUE)
   if (ref_is_sha) {
     return(!nzchar(installed_sha) || !startsWith(tolower(installed_sha), tolower(spec$ref)))
   }
-  !identical(installed_ref, spec$ref)
+  TRUE
 }
 missing <- specs[vapply(specs, needs_install, logical(1))]
 if (!length(missing)) quit(save = "no", status = 0)
@@ -129,9 +128,9 @@ for (name in c("GITHUB_PAT", "GIT_PAT", "GITHUB_TOKEN", "GH_TOKEN", "KFLOW_GITHU
   }
 }
 if (nzchar(token_name)) {
-  message("[kflow-runtime-update] Runtime archive download has GitHub token from ", token_name, ".")
+  message("[kflow-runtime-update] Runtime GitHub access has token from ", token_name, ".")
 } else {
-  message("[kflow-runtime-update] Runtime archive download has no GitHub token.")
+  message("[kflow-runtime-update] Runtime GitHub access has no token.")
 }
 download_github_archive <- function(repo, ref) {
   archive <- tempfile(pattern = "kflow-runtime-", fileext = ".tar.gz")
@@ -209,6 +208,13 @@ clone_github_source <- function(repo, ref) {
       stop("git checkout failed for ", repo, "@", ref, call. = FALSE)
     }
   }
+  resolved_sha <- tryCatch(
+    trimws(system2(git, c("-C", source_dir, "rev-parse", "HEAD"), stdout = TRUE, stderr = FALSE)[[1]]),
+    error = function(e) ""
+  )
+  if (nzchar(resolved_sha)) {
+    attr(source_dir, "kflow_resolved_sha") <- resolved_sha
+  }
   source_dir
 }
 install_local_source <- function(path, lib) {
@@ -229,7 +235,7 @@ install_local_source <- function(path, lib) {
     stop("R CMD INSTALL failed for ", basename(path), "\n", detail, call. = FALSE)
   }
 }
-write_remote_metadata <- function(package, repo, ref, lib) {
+write_remote_metadata <- function(package, repo, ref, sha, lib) {
   desc_path <- system.file("DESCRIPTION", package = package, lib.loc = lib)
   if (!nzchar(desc_path) || !file.exists(desc_path)) return(invisible(FALSE))
   repo_parts <- strsplit(repo, "/", fixed = TRUE)[[1]]
@@ -239,7 +245,7 @@ write_remote_metadata <- function(package, repo, ref, lib) {
     RemoteUsername = repo_parts[[1]],
     RemoteRepo = repo_parts[[length(repo_parts)]],
     RemoteRef = ref,
-    RemoteSha = ref
+    RemoteSha = sha
   )
   fields <- as.list(read.dcf(desc_path)[1, ])
   fields[names(remote)] <- remote
@@ -253,19 +259,32 @@ write_remote_metadata <- function(package, repo, ref, lib) {
   invisible(TRUE)
 }
 for (spec in missing) {
-  message("[kflow-runtime-update] Installing missing runtime package ", spec$package, " from ", spec$repo, "@", spec$ref, ".")
+  message("[kflow-runtime-update] Installing/updating runtime package ", spec$package, " from ", spec$repo, "@", spec$ref, ".")
   err <- tryCatch({
-    archive <- tryCatch(
-      download_github_archive(spec$repo, spec$ref),
-      error = function(err) {
-        message("[kflow-runtime-update] Runtime archive download failed for ", spec$package,
-                "; trying git clone fallback.")
-        clone_github_source(spec$repo, spec$ref)
-      }
-    )
-    on.exit(unlink(archive, recursive = TRUE, force = TRUE), add = TRUE)
-    install_local_source(archive, lib)
-    write_remote_metadata(spec$package, spec$repo, spec$ref, lib)
+    ref_is_sha <- grepl("^[0-9a-f]{7,40}$", spec$ref, ignore.case = TRUE)
+    source_path <- if (ref_is_sha) {
+      tryCatch(
+        download_github_archive(spec$repo, spec$ref),
+        error = function(err) {
+          message("[kflow-runtime-update] Runtime archive download failed for ", spec$package,
+                  "; trying git clone fallback.")
+          clone_github_source(spec$repo, spec$ref)
+        }
+      )
+    } else {
+      clone_github_source(spec$repo, spec$ref)
+    }
+    resolved_sha <- attr(source_path, "kflow_resolved_sha", exact = TRUE)
+    if (is.null(resolved_sha) || !nzchar(resolved_sha)) {
+      resolved_sha <- spec$ref
+    }
+    if (!identical(resolved_sha, spec$ref)) {
+      message("[kflow-runtime-update] Resolved ", spec$repo, "@", spec$ref, " to ", substr(resolved_sha, 1, 12), ".")
+    }
+    on.exit(unlink(source_path, recursive = TRUE, force = TRUE), add = TRUE)
+    install_local_source(source_path, lib)
+    write_remote_metadata(spec$package, spec$repo, spec$ref, resolved_sha, lib)
+    message("[kflow-runtime-update] Installed ", spec$package, " at ", substr(resolved_sha, 1, 12), ".")
     NULL
   }, error = function(e) e)
   if (inherits(err, "error")) {

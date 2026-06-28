@@ -26,7 +26,7 @@ env:
   KFLOW_RUNTIME_UPDATE: never
   TUNA_FLOW_RUNTIME_UPDATE: never
   KFLOW_REPO_RUNTIME_UPDATE: auto
-  KFLOW_RUNTIME_PACKAGES: mfclshiny=PacificCommunity/mfclshiny@main
+  KFLOW_RUNTIME_PACKAGES: none
   KFLOW_REPO_RUNTIME_PACKAGES: mfclshiny=PacificCommunity/mfclshiny@main
   MFCLSHINY_GITHUB_REF: main
   KFLOW_RUNTIME_GITHUB_AUTH: "true"
