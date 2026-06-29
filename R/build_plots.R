@@ -358,6 +358,8 @@ write_report_ready_figures_qmd <- function(figure_index, output_dir, ready_dir) 
       paste0("### ", label),
       "",
       paste0("<!-- figure: ", id, " -->"),
+      "\\vspace*{0.04\\textheight}",
+      "",
       paste0("![", markdown_escape(caption), "](", rel, "){#", fig_id, " fig-align=\"center\" width=100%}"),
       "",
       "\\FloatBarrier",
