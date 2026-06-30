@@ -74,15 +74,67 @@ payload_label_from_manifest <- function(manifest, fallback) {
   fallback
 }
 
+payload_path_parts <- function(path) {
+  path <- normalizePath(path, winslash = "/", mustWork = FALSE)
+  parts <- strsplit(path, "/", fixed = TRUE)[[1]]
+  parts[nzchar(parts)]
+}
+
+payload_diagnostic_anchor <- function(folder) {
+  parts <- payload_path_parts(folder)
+  n <- length(parts)
+  if (n < 2L) return(NA_integer_)
+  for (i in seq_len(n - 1L)) {
+    current <- parts[[i]]
+    next_part <- parts[[i + 1L]]
+    if (identical(current, "jitter") && grepl("^jitter_seed_[0-9]+$", next_part)) return(i)
+    if (identical(current, "retro") && grepl("^peel_[0-9]+$", next_part)) return(i)
+    if (identical(current, "hessian") && grepl("^part_[0-9]+$", next_part)) return(i)
+    if (identical(current, "profile") && i + 2L <= n && grepl("^scalar_", parts[[i + 2L]])) return(i)
+    if (identical(current, "selftest") && next_part %in% c("refit", "sim", "truth", "truth_eval", "inputs", "recovery")) return(i)
+  }
+  NA_integer_
+}
+
+payload_is_diagnostic_output_folder <- function(folder) {
+  is.finite(payload_diagnostic_anchor(folder))
+}
+
+payload_has_attached_checks <- function(payload) {
+  attached <- tryCatch(payload$data$info$attached_checks, error = function(e) NULL)
+  is.list(attached) && length(attached) > 0
+}
+
+payload_prefer_main_rows <- function(rows) {
+  rows <- bind_rows_fill(rows)
+  if (!nrow(rows)) return(rows)
+
+  rows$path_depth <- suppressWarnings(as.integer(rows$path_depth))
+  rows$has_attached_checks <- as.logical(rows$has_attached_checks)
+  rows$has_attached_checks[is.na(rows$has_attached_checks)] <- FALSE
+
+  out <- lapply(split(seq_len(nrow(rows)), rows$model_label), function(idx) {
+    group <- rows[idx, , drop = FALSE]
+    # For duplicate labels, keep the richer attached-check payload first, then
+    # the shallower path. This avoids counting nested check payloads as models.
+    group <- group[order(!group$has_attached_checks, group$path_depth, group$payload_file), , drop = FALSE]
+    group[1L, , drop = FALSE]
+  })
+  out <- bind_rows_fill(out)
+  out <- out[order(out$model_label, out$path_depth, out$payload_file), , drop = FALSE]
+  out[, setdiff(names(out), c("has_attached_checks", "path_depth")), drop = FALSE]
+}
+
 payloads <- function(input_dir) {
   files <- list.files(input_dir, pattern = "^model_payload[.]rds$", recursive = TRUE, full.names = TRUE)
+  files <- files[!vapply(dirname(files), payload_is_diagnostic_output_folder, logical(1))]
   rows <- lapply(files, function(file) {
     folder <- dirname(file)
+    payload <- tryCatch(readRDS(file), error = function(e) NULL)
+    if (is.null(payload)) return(NULL)
     manifest <- payload_manifest(folder)
     label <- payload_label_from_manifest(manifest, basename(folder))
     if (identical(label, basename(folder))) {
-      payload <- tryCatch(readRDS(file), error = function(e) NULL)
-      if (is.null(payload)) return(NULL)
       label <- payload_label(payload, basename(folder))
     }
     data.frame(
@@ -90,10 +142,12 @@ payloads <- function(input_dir) {
       model_folder = normalizePath(folder, winslash = "/", mustWork = FALSE),
       payload_file = normalizePath(file, winslash = "/", mustWork = FALSE),
       manifest_file = normalizePath(file.path(folder, "model_payload_manifest.json"), winslash = "/", mustWork = FALSE),
+      has_attached_checks = payload_has_attached_checks(payload),
+      path_depth = length(payload_path_parts(folder)),
       stringsAsFactors = FALSE
     )
   })
-  bind_rows_fill(rows)
+  payload_prefer_main_rows(rows)
 }
 
 find_report_selection <- function(input_dir) {
