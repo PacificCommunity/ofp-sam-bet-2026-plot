@@ -80,29 +80,21 @@ payload_path_parts <- function(path) {
   parts[nzchar(parts)]
 }
 
-payload_diagnostic_anchor <- function(folder) {
-  parts <- payload_path_parts(folder)
-  n <- length(parts)
-  if (n < 2L) return(NA_integer_)
-  for (i in seq_len(n - 1L)) {
-    current <- parts[[i]]
-    next_part <- parts[[i + 1L]]
-    if (identical(current, "jitter") && grepl("^jitter_seed_[0-9]+$", next_part)) return(i)
-    if (identical(current, "retro") && grepl("^peel_[0-9]+$", next_part)) return(i)
-    if (identical(current, "hessian") && grepl("^part_[0-9]+$", next_part)) return(i)
-    if (identical(current, "profile") && i + 2L <= n && grepl("^scalar_", parts[[i + 2L]])) return(i)
-    if (identical(current, "selftest") && next_part %in% c("refit", "sim", "truth", "truth_eval", "inputs", "recovery")) return(i)
-  }
-  NA_integer_
-}
-
-payload_is_diagnostic_output_folder <- function(folder) {
-  is.finite(payload_diagnostic_anchor(folder))
+payload_is_child_payload <- function(folder, all_folders) {
+  folder <- normalizePath(folder, winslash = "/", mustWork = FALSE)
+  all_folders <- normalizePath(all_folders, winslash = "/", mustWork = FALSE)
+  parent_folders <- setdiff(all_folders, folder)
+  if (!length(parent_folders)) return(FALSE)
+  any(startsWith(paste0(folder, "/"), paste0(parent_folders, "/")))
 }
 
 payload_has_attached_checks <- function(payload) {
   attached <- tryCatch(payload$data$info$attached_checks, error = function(e) NULL)
   is.list(attached) && length(attached) > 0
+}
+
+payload_is_archived_input <- function(folder) {
+  any(payload_path_parts(folder) %in% c("input_archive", "input_archives", "inputs_archive", "inputs_archives"))
 }
 
 payload_prefer_main_rows <- function(rows) {
@@ -112,22 +104,25 @@ payload_prefer_main_rows <- function(rows) {
   rows$path_depth <- suppressWarnings(as.integer(rows$path_depth))
   rows$has_attached_checks <- as.logical(rows$has_attached_checks)
   rows$has_attached_checks[is.na(rows$has_attached_checks)] <- FALSE
+  rows$is_archived_input <- as.logical(rows$is_archived_input)
+  rows$is_archived_input[is.na(rows$is_archived_input)] <- FALSE
 
   out <- lapply(split(seq_len(nrow(rows)), rows$model_label), function(idx) {
     group <- rows[idx, , drop = FALSE]
-    # For duplicate labels, keep the richer attached-check payload first, then
-    # the shallower path. This avoids counting nested check payloads as models.
-    group <- group[order(!group$has_attached_checks, group$path_depth, group$payload_file), , drop = FALSE]
-    group[1L, , drop = FALSE]
+    if (any(!group$is_archived_input) && any(group$is_archived_input)) {
+      group <- group[!group$is_archived_input, , drop = FALSE]
+    }
+    group
   })
   out <- bind_rows_fill(out)
   out <- out[order(out$model_label, out$path_depth, out$payload_file), , drop = FALSE]
-  out[, setdiff(names(out), c("has_attached_checks", "path_depth")), drop = FALSE]
+  out[, setdiff(names(out), c("has_attached_checks", "path_depth", "is_archived_input")), drop = FALSE]
 }
 
 payloads <- function(input_dir) {
   files <- list.files(input_dir, pattern = "^model_payload[.]rds$", recursive = TRUE, full.names = TRUE)
-  files <- files[!vapply(dirname(files), payload_is_diagnostic_output_folder, logical(1))]
+  folders <- normalizePath(dirname(files), winslash = "/", mustWork = FALSE)
+  files <- files[!vapply(folders, payload_is_child_payload, logical(1), all_folders = folders)]
   rows <- lapply(files, function(file) {
     folder <- dirname(file)
     payload <- tryCatch(readRDS(file), error = function(e) NULL)
@@ -143,6 +138,7 @@ payloads <- function(input_dir) {
       payload_file = normalizePath(file, winslash = "/", mustWork = FALSE),
       manifest_file = normalizePath(file.path(folder, "model_payload_manifest.json"), winslash = "/", mustWork = FALSE),
       has_attached_checks = payload_has_attached_checks(payload),
+      is_archived_input = payload_is_archived_input(folder),
       path_depth = length(payload_path_parts(folder)),
       stringsAsFactors = FALSE
     )
